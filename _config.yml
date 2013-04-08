@@ -73,8 +73,8 @@ google_plus_one_size: medium
 
 # Google Plus Profile
 # Hidden: No visible button, just add author information to search results
-googleplus_user:
-googleplus_hidden: false
+googleplus_user: 117059279935561636925
+googleplus_hidden: true
 
 # Pinboard
 pinboard_user:
@@ -92,4 +92,7 @@ disqus_show_comment_count: false
 google_analytics_tracking_id: UA-35062219-3
 
 # Facebook Like
-facebook_like: false
+facebook_like: true
+
+# LinkedIn User
+linkedin_user: songgao
