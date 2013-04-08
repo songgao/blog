@@ -7,3 +7,11 @@ categories:
 ---
 
 {% img /images/posts/gophers.jpg %}
+
+{% codeblock hello.go %}
+package main
+import "fmt"
+func main{
+    fmt.Println("Hello?")
+}
+{% endcodeblock %}
