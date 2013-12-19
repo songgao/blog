@@ -7,7 +7,7 @@
 	<meta name="author" content="Song Gao">
 
 	
-	<meta name="description" content=" Go in Academia: Emulating Wireless Networks temporary place holder Comments Please enable JavaScript to view the comments powered by Disqus. ">
+	<meta name="description" content="Go in Academia: Emulating Wireless Networks How I Came to This TL;DR; &#8211; We didn&#8217;t want to use simulators and using real device for &hellip;">
 	
 
   <!-- http://t.co/dKP3o1e -->
@@ -80,7 +80,197 @@
 			<div class="mid-col-container">
 				<div id="content" class="inner"><article class="post" itemscope itemtype="http://schema.org/BlogPosting">
 	<h1 class="title" itemprop="name">Go in Academia: Emulating Wireless Networks</h1>
-	<div class="entry-content" itemprop="articleBody"><p>temporary place holder</p>
+	<div class="entry-content" itemprop="articleBody"><h1>How I Came to This</h1>
+
+<p><strong>TL;DR;</strong> &#8211; We didn&#8217;t want to use simulators and using real device for experiments became infeasible, so I decided to build an emulator for 802.11-like networks. The first version was in C++ and it didn&#8217;t work well. Then I went for Go and it gives twice throughput than C++ version and that&#8217;s what we are using now.</p>
+
+<p>I am in a wireless networking research group in Auburn University. We were working on a project in which we ran <a href="https://en.wikipedia.org/wiki/Optimized_Link_State_Routing_Protocol">OLSR</a> (an mobile Ad-hoc routing daemon) on mobile devices, and used data dissemination algorithms to periodically broadcast data into a group of 12 nodes. To measure how OLSR performs in real world environment, and to benchmark our algorithms, we did various tests on laptops and Android devices. The most ridiculous-looking one was conducted in the basement of our department building, where 8 of us walked in a L shaped hallway back-and-forth, each holding a laptop, with the other 4 placed statically in corners.</p>
+
+<p>We did these real device based experiments because we were doing systematic engineering and we needed to study behaviors of implementations that people would be using in real world. Simulations wouldn&#8217;t work because everything has to be written in the simulator&#8217;s script language (Tcl in case of ns-2), in the context of the simulation framework, and that means the protocol running in the simulator is not the one people can run on a laptop or a mobile device. You might wonder why simulation can&#8217;t be made as close to real-world programs as possible. Just look at the <a href="http://um-olsr.cvs.sourceforge.net/viewvc/um-olsr/um-olsr/">OLSR module for ns-2</a> and the de facto standard implementation <a href="http://olsr.org/git/">OLSRd</a>. Most of advances happen in <code>OLSRd</code> instead of the ns-2 module. In addition, applications and OS kernel can make a big difference between real device and simulators.</p>
+
+<p>But real device based experiments are apparently not scalable, especially when we want to consider mobility of wireless nodes. So I started to build an emulator. I was never great at C++ but for some reason I natually picked C++ for this. I used <code>boost::asio</code> for asynchronous networking. It ended up with a lot of crazy callbacks written in weird C++11 syntax. And there was a racing problem that I couldn&#8217;t think of a way to solve efficiently. So I looked into Go, and rewrote everything I had in C++ in Go. I took half the time, wrote half number of lines of code, but the maximum throughput it could handle was twice as much as the C++ version! It worked and it worked better. That was how I started my first Go project, Squirrel Land (<a href="https://github.com/squirrel-land/squirrels">squirrel-land/squirrels</a>)</p>
+
+<h1>So What Is Squirrel Land Exactly?</h1>
+
+<p>The goal of Squirrel Land is to emulate wireless network behaviours on ethernet infrastructure. In other words, networking applications running on different Linux hosts connected to each other through ethernet (physical or virtual) should see similar networking performance as in a mobile wireless network, e.g. 802.11 Ad-hoc network. Conceptually, we want to replace the physical layer and part of link layer in TCP/IP stack with software that we have control on. See figure below:</p>
+
+<p><img class="center" src="/images/posts/2013-12-19-go-in-academia-emulating-wireless-networks/concept.png" width="512"></p>
+
+<p>Squirrel Land produces two executables, <code>squirrel-worker</code> and <code>squirrel-master</code>. <code>squirrel-worker</code> runs on each host where a network application is being tested. Let&#8217;s call such hosts worker hosts. <code>squirrel-master</code> runs only one instance on a special host that has powerful processing power and is reachable by all worker hosts. When being executed, <code>squirrel-worker</code> creates a <a href="https://www.kernel.org/doc/Documentation/networking/tuntap.txt">TAP</a> interface, e.g. <code>tap0</code>, on that host, assigns an IP address to the interface and sets up routing for it. Since TAP interfaces work in link layer, <code>squirrel-worker</code> can capture every link layer frame that any process on the host sends through <code>tap0</code>. Upon getting a frame, <code>squirrel-worker</code> forwards it to the <code>squirrel-master</code>. <code>squirrel-master</code> would apply an interference model, and based on virtual locations of each emulated &#8220;mobile node&#8221;, decides whether the frame should be deliverable or not. If deliverable, it forwards it to the corresponding <code>squirrel-worker</code>, and the second <code>squirrel-worker</code> writes the frame into its TAP interface, and the OS would parse the frame and deliver the data to corresponding application. Following figure is an example of how a piece of data is sent from <code>OLSRd</code> process in one node to <code>OLSRd</code> process in another node:</p>
+
+<p><img class="center" src="/images/posts/2013-12-19-go-in-academia-emulating-wireless-networks/data_flow.png" width="512"></p>
+
+<p><code>squirrel-worker</code> is really just a relay between TAP device and a TCP stream to <code>squirrel-master</code>. On the other hand, <code>squirrel-master</code> can easily be the bottle neck, because every single frame in the entire system needs to be handled by <code>squirrel-master</code>.</p>
+
+<h1>Implementation Details</h1>
+
+<h2>Re-using Buffers</h2>
+
+<p>GC is great but when you have a new 1500 bytes large slice allocated every 40 microseconds (assuming of 300Mbps traffic with 1500 MTU), there&#8217;s a lot of pressure on GC. To reduce this overhead, I use a circular buffer (<a href="https://github.com/squirrel-land/squirrels/blob/dev/common/buffered.go"><code>buffered.go</code></a>, <a href="https://github.com/squirrel-land/squirrels/blob/dev/common/link.go"><code>link.go</code></a>) for all frames being handled on <code>squirrel-master</code>. To be more specific, there&#8217;s a <code>chan</code> called <code>owner</code> buffering all available byte slices. Whenever a frame comes in, a byte slice is taken from <code>owner</code> and used to hold the frame. When the frame is no longer useful, it&#8217;s returned into the <code>owner</code>. Here&#8217;s simplified code that illustrates it:</p>
+
+<pre><code>type Token struct {
+        Data  []byte
+        owner chan&lt;- *Token
+}
+
+// done with the byte slice; returning it for re-use
+func (t *Token) Return() { 
+        t.owner &lt;- t
+}
+
+type BufferManager struct {
+        buffer chan *Token
+}
+
+func NewBufferManager(size int) *BufferManager {
+        buffer := make(chan *Token, size)
+        ret := &amp;BufferManager{buffer}
+        for i := 0; i &lt; size; i++ {
+                buffer &lt;- &amp;Token{Data: []byte, owner: buffer}
+        }
+        return ret
+}
+
+// get a re-usable byte slice
+func (b *BufferManager) GetToken() *Token { 
+        return &lt;-b.buffer
+}
+</code></pre>
+
+<p>I have a separate repo showing a simple benchmark about this technique. You are welcomed to <a href="https://github.com/songgao/bufferManager.go">check out the results</a>. Also, CloudFlare explaines how they recycle memory buffers in Go in <a href="http://blog.cloudflare.com/recycling-memory-buffers-in-go">an awesome blog post</a>.</p>
+
+<h2>Plugin System</h2>
+
+<p>Go does not have dynamic linking and everything is built into a single binary, which is a great because it&#8217;s much easier to deploy. However, this disables the ability to dynamically load modules. We do need a way to allow other researchers to contribute modules into Squirrel Land. These modules include ones that describe mobility patterns of mobile nodes, and ones that models wireless transmission properties, such as interference on wireless links and <a href="https://en.wikipedia.org/wiki/Distributed_coordination_function">DCF</a> in 802.11.</p>
+
+<p>I ended up creating a separate repo (<a href="https://github.com/squirrel-land/models/">squirrel-land/models</a> for all such modules. Each module is in a directory and is built into a Go package. Then in <a href="https://github.com/squirrel-land/models/"><code>constructors.go</code></a>, constructors of each module is mapped to a string that can be used in configuration file. In this way, new modules could be easily integrated into Squirrel Land without much coupling with <code>squirrel-land/squirrels</code>.</p>
+
+<p>I&#8217;m not very proud of this approach. If you have a better idea, please let me know :)</p>
+
+<h2>TUN/TAP Driver</h2>
+
+<p><a href="https://code.google.com/p/tuntap/"><code>tuntap</code></a> was the only one I found. It didn&#8217;t quite meet my needs because all I wanted was a simple way to read data from TUN/TAP into my existing byte slices. In fact I just wanted something like <code>os.File</code>. So I implemented another one, <a href="https://github.com/songgao/water/">songgao/water</a>. <code>tuntap</code> was a really good example to start from. There&#8217;s not much to talk about here and I just want to say I was impressed by Go&#8217;s way of handling system calls. It feels so close to C, but it&#8217;s not done through C interface like CGO. There&#8217;s a lot of great stuff in <a href="http://golang.org/pkg/syscall/"><code>syscall</code></a> package. If you are thinking about building some OS-related stuff, it&#8217;s definitely worth looking into.</p>
+
+<h1>Try It!</h1>
+
+<p>Squirrel Land only works on Linux for now. If you&#8217;ve got 20 minutes and have docker on your Linux machine, let&#8217;s try something here.</p>
+
+<h2>Get the Squirrel Land master</h2>
+
+<pre><code># On Linux host
+go get github.com/squirrel-land/squirrels/squirrel-master
+</code></pre>
+
+<p>This would clone <code>squirrel-land/squirrels</code> into your $GOPATH, along with its dependency <code>squirrel-land/models</code>. But it only builds and installs <code>squirrel-master</code>, which is the binary that you would run on your Linux host.</p>
+
+<h2>Build <code>squirrel-worker</code> and (optionally) make it available through HTTP</h2>
+
+<pre><code># On Linux host
+cd $GOPATH/src/github.com/squirrel-land/squirrels/squirrel-worker
+go build
+
+# following is optional; you can use whatever way you feel comfortable
+# with to transfer file into containers
+mkdir /tmp/blahblah
+cp squirrel-worker /tmp/blahblah/squirrel-worker
+cd /tmp/blahblah
+python2.7 -m SimpleHTTPServer 9999
+</code></pre>
+
+<h2>Create LXC containers and get <code>squirrel-worker</code></h2>
+
+<pre><code>docker run -i -t -name="squirrel_test_1" ubuntu /bin/bash
+
+# now you are in container
+
+apt-get update &amp;&amp; apt-get install wget iperf
+# assuming 172.17.42.1 is the gateway of your docker bridge
+wget 172.17.42.1:9999/squirrel-worker &amp;&amp; chmod +x squirrel-worker
+</code></pre>
+
+<p>Now open up two new shells and create another two such containers, and we&#8217;ll have three containers ready for <code>squirrel-worker</code>.</p>
+
+<h2>Run <code>squirrel-master</code></h2>
+
+<p>On linux, create <code>master.conf.json</code> with following content:</p>
+
+<pre><code>{
+    "ListenAddress":                ":1234",
+    "Network":                      "10.0.0.0/24",
+
+    "MobilityManager":              "InteractivePositions",
+    "MobilityManagerParameters":    {
+        "laddr": ":8765"
+    },
+
+    "September":                    "September2nd",
+    "SeptemberParameters":          {
+        "LowestZeroPacketDeliveryDistance": 120000,
+        "InterferenceRange":                250000
+    }
+}
+</code></pre>
+
+<p>This configuration file uses <code>September2nd</code> as wireless model, which considers interference and wireless transmission range. <code>InteractivePositions</code> spins up a web server that allows you to set position of nodes dynamically in browser. To run the master with this configuration file:</p>
+
+<pre><code>squirrel-master -c master.conf.json
+</code></pre>
+
+<h2>Run <code>squirrel-worker</code> in containers</h2>
+
+<p>In first container:</p>
+
+<pre><code>squirrel-worker -m 172.17.42.1:1234 -i 1 -t tap0 &amp;
+</code></pre>
+
+<p>In second container:</p>
+
+<pre><code>squirrel-worker -m 172.17.42.1:1234 -i 2 -t tap0 &amp;
+</code></pre>
+
+<p>In third container:</p>
+
+<pre><code>squirrel-worker -m 172.17.42.1:1234 -i 3 -t tap0 &amp;
+</code></pre>
+
+<p>Again, this assumes your Linux host address in docker bridge is <code>172.17.42.1</code>. Change it accordingly if it&#8217;s different. Now you should see some output from <code>squirrel-master</code> on Linux host.</p>
+
+<p>If you type <code>ip addr</code> and <code>ip route</code> now in any of these three containers, you&#8217;ll see a <code>tap0</code> interface with <code>10.0.0.*</code> IP address, and an entry for <code>10.0.0.0/24</code> in routing table.</p>
+
+<p>Open <a href="http://localhost:8765/">http://localhost:8765/</a> in browser on your Linux host. It should show a grid with three colorful dots crowded in top left corner. Drag the three dots to center, and place them not two far away from each other.</p>
+
+<p><img class="center" src="/images/posts/2013-12-19-go-in-academia-emulating-wireless-networks/grid_and_nodes.png" width="512"></p>
+
+<h2>Run some <code>iperf</code> tests in containers</h2>
+
+<p>In first container:</p>
+
+<pre><code>iperf -sui1
+</code></pre>
+
+<p>In second container:</p>
+
+<pre><code>iperf -uc 10.0.0.1 -b 50M -t 100
+</code></pre>
+
+<p>Now in first container <code>iperf</code> should be printing bandwidth usage (about 7 Mbits/sec) if your node 1 and node 2 are not too far away from each other. Try moving node 2 away from node 1 (in browser) and see how bandwidth usage changes.</p>
+
+<p>Now let&#8217;s add third node&#8217;s traffic. In third container:</p>
+
+<pre><code>iperf -uc 10.0.0.1 -b 50M -t 100
+</code></pre>
+
+<p>The first container would show bandwidth usage for both node 2 and node 3. They both drop to around 3 Mbits/sec due to interference. If you are interested, try to use that to produce <a href="https://en.wikipedia.org/wiki/Hidden_node_problem">hidden station problem</a>.</p>
+
+<p>Please be aware that the web page is still quite buggy by the time this is written. It sends a HTTP request whenever you move a node. If it seems unresponsive, just refresh the page :)</p>
+
+<h1>Contribution</h1>
+
+<p>Squirrel Land is GPL licensed. It&#8217;s still in early stage. (There&#8217;s no test coverage yet please don&#8217;t hate it.) Please feel free to <a href="https://song.gao.io/">drop me a line</a>, send PRs or submit issues on <a href="https://github.com/squirrel-land/squirrels">GitHub</a>. If you are doing research in computer networking, please consider improve or submit new <a href="https://github.com/squirrel-land/models">models</a>.</p>
+
+<hr />
+
+<p>This article is also posted at: <a href="http://blog.gopheracademy.com/day-20-squirrel">http://blog.gopheracademy.com/day-20-squirrel</a></p>
 </div>
 
 </article>
