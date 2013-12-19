@@ -1,0 +1,23 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<urlset xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'>
+    <url>
+        <loc>http://blog.song.gao.io/posts/2013/hello/</loc>
+        <lastmod>2013-12-19T00:34:57-06:00</lastmod>
+    </url>
+    <url>
+        <loc>http://blog.song.gao.io/posts/2013/go-in-academia-emulating-wireless-networks/</loc>
+        <lastmod>2013-12-19T13:13:45-06:00</lastmod>
+    </url>
+    <url>
+        <loc>http://blog.song.gao.io/blog/archives/</loc>
+        <lastmod>2013-12-19T13:13:45-06:00</lastmod>
+    </url>
+    <url>
+        <loc>http://blog.song.gao.io/</loc>
+        <lastmod>2013-12-19T13:13:45-06:00</lastmod>
+    </url>
+    <url>
+        <loc>http://blog.song.gao.io/robots.txt</loc>
+        <lastmod>2013-12-19T00:34:57-06:00</lastmod>
+    </url>
+</urlset>

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Song Gao]]></title>
+  <link href="http://blog.song.gao.io/atom.xml" rel="self"/>
+  <link href="http://blog.song.gao.io/"/>
+  <updated>2013-12-19T13:13:59-06:00</updated>
+  <id>http://blog.song.gao.io/</id>
+  <author>
+    <name><![CDATA[Song Gao]]></name>
+    <email><![CDATA[song@gao.io]]></email>
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[Go in Academia: Emulating Wireless Networks]]></title>
+    <link href="http://blog.song.gao.io/posts/2013/go-in-academia-emulating-wireless-networks/"/>
+    <updated>2013-12-19T11:46:00-06:00</updated>
+    <id>http://blog.song.gao.io/posts/2013/go-in-academia-emulating-wireless-networks</id>
+    <content type="html"><![CDATA[<p>temporary place holder</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Hello?]]></title>
+    <link href="http://blog.song.gao.io/posts/2013/hello/"/>
+    <updated>2013-04-08T13:04:00-05:00</updated>
+    <id>http://blog.song.gao.io/posts/2013/hello</id>
+    <content type="html"><![CDATA[<p><img src="http://blog.song.gao.io/images/posts/gophers.jpg"></p>
+
+<figure class='code'><figcaption><span>hello.go </span></figcaption>
+ <div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class='go'><span class='line'><span class="kn">package</span> <span class="nx">main</span>
+</span><span class='line'><span class="kn">import</span> <span class="s">&quot;fmt&quot;</span>
+</span><span class='line'><span class="kd">func</span> <span class="nx">main</span><span class="p">{</span>
+</span><span class='line'>    <span class="nx">fmt</span><span class="p">.</span><span class="nx">Println</span><span class="p">(</span><span class="s">&quot;Hello?&quot;</span><span class="p">)</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+
+]]></content>
+  </entry>
+  
+</feed>
