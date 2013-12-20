@@ -9,21 +9,33 @@ categories:
 
 # How I Came to This
 
-__TL;DR;__ -- We didn't want to use simulators and using real device for experiments became infeasible, so I decided to build an emulator for 802.11-like networks. The first version was in C++ and it didn't work well. Then I went for Go and it gives twice throughput than C++ version and that's what we are using now.
+__TL;DR;__ -- We didn't want to use simulators and using real device for experiments became infeasible, so I decided to build an emulator for 802.11-like networks. The first version was in C++ and it didn't work well. I rewrote the simulator in Go and it gives twice throughput than C++ version and that's what we are using now.
 
-I am in a wireless networking research group in Auburn University. We were working on a project in which we ran [OLSR](https://en.wikipedia.org/wiki/Optimized_Link_State_Routing_Protocol) (an mobile Ad-hoc routing daemon) on mobile devices, and used data dissemination algorithms to periodically broadcast data into a group of 12 nodes. To measure how OLSR performs in real world environment, and to benchmark our algorithms, we did various tests on laptops and Android devices. The most ridiculous-looking one was conducted in the basement of our department building, where 8 of us walked in a L shaped hallway back-and-forth, each holding a laptop, with the other 4 placed statically in corners.
+I am in a wireless networking research group in Auburn University. We were working on a project in which we run [OLSR](https://en.wikipedia.org/wiki/Optimized_Link_State_Routing_Protocol) (an mobile Ad-hoc routing daemon) on mobile devices, and used data dissemination algorithms to periodically broadcast data into a group of 12 nodes.
 
-We did these real device based experiments because we were doing systematic engineering and we needed to study behaviors of implementations that people would be using in real world. Simulations wouldn't work because everything has to be written in the simulator's script language (Tcl in case of ns-2), in the context of the simulation framework, and that means the protocol running in the simulator is not the one people can run on a laptop or a mobile device. You might wonder why simulation can't be made as close to real-world programs as possible. Just look at the [OLSR module for ns-2](http://um-olsr.cvs.sourceforge.net/viewvc/um-olsr/um-olsr/) and the de facto standard implementation [OLSRd](http://olsr.org/git/). Most of advances happen in `OLSRd` instead of the ns-2 module. In addition, applications and OS kernel can make a big difference between real device and simulators.
+To measure how OLSR performs in real world environment, and to benchmark our algorithms, we did various tests on laptops and Android devices. The most ridiculous-looking one was conducted in the basement of our department building, where 8 of us walked in a L shaped hallway back-and-forth, each holding a laptop, with the other 4 placed statically in corners.
 
-But real device based experiments are apparently not scalable, especially when we want to consider mobility of wireless nodes. So I started to build an emulator. I was never great at C++ but for some reason I natually picked C++ for this. I used `boost::asio` for asynchronous networking. It ended up with a lot of crazy callbacks written in weird C++11 syntax. And there was a racing problem that I couldn't think of a way to solve efficiently. So I looked into Go, and rewrote everything I had in C++ in Go. I took half the time, wrote half number of lines of code, but the maximum throughput it could handle was twice as much as the C++ version! It worked and it worked better. That was how I started my first Go project, Squirrel Land ([squirrel-land/squirrels](https://github.com/squirrel-land/squirrels))
+We did these real device based experiments because we were doing systematic engineering and we needed to study behaviors of implementations that people would be using in real world. Simulations wouldn't work because everything has to be written in the simulator's script language (Tcl in case of ns-2), in the context of the simulation framework, and that means the protocol running in the simulator is not the one people can run on a laptop or a mobile device.
+
+But real device based experiments are apparently not scalable, especially when we want to consider mobility of wireless nodes. So I started to build an emulator. I was never great at C++ but for some reason I naturally picked C++ for this. I used `boost::asio` for asynchronous networking. It ended up with a lot of crazy callbacks written in weird C++11 syntax, and there was a race problem that I couldn't think of a way to solve efficiently.
+
+So I looked into Go, and rewrote everything I had in C++ in Go. I took half the time, wrote half number of lines of code, but the maximum throughput it could handle was twice as much as the C++ version! It worked and it worked better. That was how I started my first Go project, Squirrel Land ([squirrel-land/squirrels](https://github.com/squirrel-land/squirrels))
 
 # So What Is Squirrel Land Exactly?
 
-The goal of Squirrel Land is to emulate wireless network behaviours on ethernet infrastructure. In other words, networking applications running on different Linux hosts connected to each other through ethernet (physical or virtual) should see similar networking performance as in a mobile wireless network, e.g. 802.11 Ad-hoc network. Conceptually, we want to replace the physical layer and part of link layer in TCP/IP stack with software that we have control on. See figure below:
+The goal of Squirrel Land is to emulate wireless network behaviours on Ethernet infrastructure. In other words, networking applications running on different Linux hosts connected to each other through Ethernet (physical or virtual) should see similar networking performance as in a mobile wireless network, e.g. 802.11 Ad-hoc network.
+
+Conceptually, we want to replace the physical layer and part of link layer in TCP/IP stack with software that we have control on. See figure below:
 
 {% img center /images/posts/2013-12-19-go-in-academia-emulating-wireless-networks/concept.png 512 %}
 
-Squirrel Land produces two executables, `squirrel-worker` and `squirrel-master`. `squirrel-worker` runs on each host where a network application is being tested. Let's call such hosts worker hosts. `squirrel-master` runs only one instance on a special host that has powerful processing power and is reachable by all worker hosts. When being executed, `squirrel-worker` creates a [TAP](https://www.kernel.org/doc/Documentation/networking/tuntap.txt) interface, e.g. `tap0`, on that host, assigns an IP address to the interface and sets up routing for it. Since TAP interfaces work in link layer, `squirrel-worker` can capture every link layer frame that any process on the host sends through `tap0`. Upon getting a frame, `squirrel-worker` forwards it to the `squirrel-master`. `squirrel-master` would apply an interference model, and based on virtual locations of each emulated "mobile node", decides whether the frame should be deliverable or not. If deliverable, it forwards it to the corresponding `squirrel-worker`, and the second `squirrel-worker` writes the frame into its TAP interface, and the OS would parse the frame and deliver the data to corresponding application. Following figure is an example of how a piece of data is sent from `OLSRd` process in one node to `OLSRd` process in another node:
+Squirrel Land produces two executables, `squirrel-worker` and `squirrel-master`. `squirrel-worker` runs on each host where a network application is being tested. Let's call such hosts worker hosts. `squirrel-master` runs only one instance on a special host that has powerful processing power and is reachable by all worker hosts.
+
+When executed, `squirrel-worker` creates a [TAP](https://www.kernel.org/doc/Documentation/networking/tuntap.txt) interface, e.g. `tap0`, on that host, assigns an IP address to the interface and sets up routing for it. Since TAP interfaces work in link layer, `squirrel-worker` can capture every link layer frame that any process on the host sends through `tap0`. Upon getting a frame, `squirrel-worker` forwards it to the `squirrel-master`.
+
+`squirrel-master` can apply an interference model, and based on virtual locations of each emulated "mobile node", decides whether the frame should be deliverable or not. If deliverable, it forwards it to the corresponding `squirrel-worker`, the second `squirrel-worker` writes the frame into its TAP interface, and the OS would parse the frame and deliver the data to corresponding application.
+
+Following figure is an example of how a piece of data is sent from `OLSRd` process in one node to `OLSRd` process in another node:
 
 {% img center /images/posts/2013-12-19-go-in-academia-emulating-wireless-networks/data_flow.png 512 %}
 
@@ -33,7 +45,11 @@ Squirrel Land produces two executables, `squirrel-worker` and `squirrel-master`.
 
 ## Re-using Buffers
 
-GC is great but when you have a new 1500 bytes large slice allocated every 40 microseconds (assuming of 300Mbps traffic with 1500 MTU), there's a lot of pressure on GC. To reduce this overhead, I use a circular buffer ([`buffered.go`](https://github.com/squirrel-land/squirrels/blob/dev/common/buffered.go), [`link.go`](https://github.com/squirrel-land/squirrels/blob/dev/common/link.go)) for all frames being handled on `squirrel-master`. To be more specific, there's a `chan` called `owner` buffering all available byte slices. Whenever a frame comes in, a byte slice is taken from `owner` and used to hold the frame. When the frame is no longer useful, it's returned into the `owner`. Here's simplified code that illustrates it:
+GC is great but when you have a new 1500 bytes large slice allocated every 40 microseconds (assuming of 300Mbps traffic with 1500 MTU), there's a lot of pressure on GC.
+
+To reduce this overhead, I use a circular buffer ([`buffered.go`](https://github.com/squirrel-land/squirrels/blob/dev/common/buffered.go), [`link.go`](https://github.com/squirrel-land/squirrels/blob/dev/common/link.go)) for all frames being handled on `squirrel-master`. To be more specific, there's a `chan` called `owner` buffering all available byte slices. Whenever a frame comes in, a byte slice is taken from `owner` and used to hold the frame. When the frame is no longer useful, it's returned into the `owner`.
+
+Here's simplified code that illustrates it:
 
     type Token struct {
             Data  []byte
@@ -67,7 +83,9 @@ I have a separate repo showing a simple benchmark about this technique. You are 
 
 ## Plugin System
 
-Go does not have dynamic linking and everything is built into a single binary, which is a great because it's much easier to deploy. However, this disables the ability to dynamically load modules. We do need a way to allow other researchers to contribute modules into Squirrel Land. These modules include ones that describe mobility patterns of mobile nodes, and ones that models wireless transmission properties, such as interference on wireless links and [DCF](https://en.wikipedia.org/wiki/Distributed_coordination_function) in 802.11.
+Go does not have dynamic linking, instead everything is built into a single binary, which is a great because it's much easier to deploy. However, this removes the ability to dynamically load modules.
+
+We needed a way to allow other researchers to contribute modules into Squirrel Land. These modules include ones that describe mobility patterns of mobile nodes, and ones that models wireless transmission properties, such as interference on wireless links and [DCF](https://en.wikipedia.org/wiki/Distributed_coordination_function) in 802.11.
 
 I ended up creating a separate repo ([squirrel-land/models](https://github.com/squirrel-land/models/) for all such modules. Each module is in a directory and is built into a Go package. Then in [`constructors.go`](https://github.com/squirrel-land/models/), constructors of each module is mapped to a string that can be used in configuration file. In this way, new modules could be easily integrated into Squirrel Land without much coupling with `squirrel-land/squirrels`.
 
@@ -75,7 +93,9 @@ I'm not very proud of this approach. If you have a better idea, please let me kn
 
 ## TUN/TAP Driver
 
-[`tuntap`](https://code.google.com/p/tuntap/) was the only one I found. It didn't quite meet my needs because all I wanted was a simple way to read data from TUN/TAP into my existing byte slices. In fact I just wanted something like `os.File`. So I implemented another one, [songgao/water](https://github.com/songgao/water/). `tuntap` was a really good example to start from. There's not much to talk about here and I just want to say I was impressed by Go's way of handling system calls. It feels so close to C, but it's not done through C interface like CGO. There's a lot of great stuff in [`syscall`](http://golang.org/pkg/syscall/) package. If you are thinking about building some OS-related stuff, it's definitely worth looking into.
+[`tuntap`](https://code.google.com/p/tuntap/) was the only one I found. It didn't quite meet my needs because all I wanted was a simple way to read data from TUN/TAP into my existing byte slices. In fact I just wanted something like `os.File`. So I implemented another one, [songgao/water](https://github.com/songgao/water/).
+
+`tuntap` was a really good example to start from. There's not much to talk about here and I just want to say I was impressed by Go's way of handling system calls. It feels so close to C, but it's not done through a C binding layer like CGO. There's a lot of great stuff in [`syscall`](http://golang.org/pkg/syscall/) package. If you are thinking about building some OS-related stuff, it's definitely worth looking into.
 
 
 # Try It!
