@@ -209,7 +209,7 @@ python2.7 -m SimpleHTTPServer 9999
 
 apt-get update &amp;&amp; apt-get install wget iperf
 # assuming 172.17.42.1 is the gateway of your docker bridge
-wget 172.17.42.1:9999/squirrel-worker &amp;&amp; chmod +x squirrel-worker
+(cd /usr/local/bin &amp;&amp; wget 172.17.42.1:9999/squirrel-worker &amp;&amp; chmod +x squirrel-worker)
 </code></pre>
 
 <p>Now open up two new shells and create another two such containers, and we&#8217;ll have three containers ready for <code>squirrel-worker</code>.</p>
